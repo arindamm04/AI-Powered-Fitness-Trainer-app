@@ -49,7 +49,7 @@ const Navbar = () => {
                     <UserIcon size={16} />
                     <span>Profile</span>
                 </Link>
-                <Button asChild>
+                <Button asChild className="transition-all duration-200 hover:shadow-lg hover:shadow-primary/30 active:scale-95">
                     <Link href="/generate-program">Get Started</Link>
                 </Button>
                 <UserButton />
