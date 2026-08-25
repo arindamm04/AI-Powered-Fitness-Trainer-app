@@ -1,3 +1,5 @@
+import * as React from "react"
+
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 
@@ -40,18 +42,46 @@ const buttonVariants = cva(
   }
 )
 
+type ButtonProps = ButtonPrimitive.Props &
+  VariantProps<typeof buttonVariants> & {
+    /**
+     * Render the button's styles/behavior onto its single child element
+     * (e.g. a `next/link` `<Link>`) instead of a `<button>`.
+     *
+     * Base UI has no `asChild`; this maps to its `render` prop.
+     */
+    asChild?: boolean
+  }
+
 function Button({
   className,
   variant = "default",
   size = "default",
-  asChild,
+  asChild = false,
+  nativeButton,
+  children,
+  render,
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: ButtonProps) {
+  const child =
+    asChild && !render
+      ? (React.Children.only(children) as React.ReactElement)
+      : undefined
+
+  const renderProp = child ?? render
+
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
-      asChild={asChild}
+      {...(renderProp
+        ? {
+            render: renderProp,
+            nativeButton:
+              nativeButton ??
+              (React.isValidElement(renderProp) && renderProp.type === "button"),
+          }
+        : { children, nativeButton })}
       {...props}
     />
   )
