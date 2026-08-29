@@ -128,6 +128,9 @@ const GenerateProgramPage = () => {
                 setMessages([]);
                 setCallEnded(false);
 
+                // Wait for Vapi worker to be ready
+                await new Promise(resolve => setTimeout(resolve, 200));
+
                 const fullName = user?.firstName
                     ? `${user.firstName} ${user.lastName || ""}`.trim()
                     : "There";
@@ -145,12 +148,18 @@ const GenerateProgramPage = () => {
                         },
                     });
                 } else if (squadId) {
-                    await vapi.start(undefined, undefined, squadId, undefined, {
-                        variableValues: {
-                            full_name: fullName,
-                            user_id: user?.id,
+                    // variableValues must go in assistantOverrides (2nd arg), not
+                    // workflowOverrides (5th) — a squad call ignores the latter.
+                    await vapi.start(
+                        undefined,
+                        {
+                            variableValues: {
+                                full_name: fullName,
+                                user_id: user?.id,
+                            },
                         },
-                    });
+                        squadId
+                    );
                 } else {
                     throw new Error("No NEXT_PUBLIC_VAPI_ASSISTANT_ID or NEXT_PUBLIC_VAPI_SQUAD_ID found in environment");
                 }

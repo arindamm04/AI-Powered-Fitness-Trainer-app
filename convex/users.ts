@@ -49,7 +49,7 @@ export const syncUser = mutation({
     },
 });
 
-/*export const updateUser = mutation({
+export const updateUser = mutation({
     args: {
     name: v.string(),
     email: v.string(),
@@ -66,5 +66,5 @@ export const syncUser = mutation({
 
         return await ctx.db.patch(existingUser._id, args);
     },
-});*/
+});
 
