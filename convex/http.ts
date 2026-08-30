@@ -97,6 +97,72 @@ http.route({
 
 })
 
+// Vapi posts this endpoint in one of two shapes depending on how it is wired:
+//
+//   1. A workflow "API Request" node sends the arguments as a flat JSON body:
+//      { "user_id": "...", "age": "25", ... }
+//
+//   2. An assistant/squad *tool* sends the tool-call envelope, with the
+//      arguments nested (and sometimes JSON-encoded as a string):
+//      { "message": { "type": "tool-calls",
+//                     "toolCallList": [{ "id": "call_x", "name": "...",
+//                                        "arguments": { "user_id": "..." } }] } }
+//
+// Reading the body as if it were always shape 1 silently yields `undefined` for
+// every field, so accept both.
+function extractToolCall(body: any): {
+    toolCallId: string | null;
+    args: Record<string, any>;
+} {
+    const message = body?.message;
+    const list = message?.toolCallList ?? message?.toolCalls ?? [];
+    const first = Array.isArray(list) ? list[0] : undefined;
+
+    if (!first) return { toolCallId: null, args: body ?? {} };
+
+    const rawArgs = first.arguments ?? first.function?.arguments ?? {};
+    const args = typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
+
+    return { toolCallId: first.id ?? first.toolCallId ?? null, args };
+}
+
+// The template variable `{{user_id}}` is not substituted on every Vapi call path
+// (notably squad calls, where `vapi.start` cannot deliver variableValues), so
+// fall back to the overrides carried on the call object itself.
+function extractUserId(body: any, args: Record<string, any>): string | undefined {
+    const call = body?.message?.call;
+    const candidates = [
+        args.user_id,
+        call?.assistantOverrides?.variableValues?.user_id,
+        call?.squadOverrides?.variableValues?.user_id,
+        call?.metadata?.user_id,
+    ];
+
+    // Drop empty values and un-substituted templates like "{{user_id}}".
+    return candidates.find(
+        (value) =>
+            typeof value === "string" && value.length > 0 && !value.includes("{{")
+    );
+}
+
+// A tool call must always get HTTP 200 with a `results` array — Vapi treats any
+// other response as a hard tool failure and hands the assistant nothing to say,
+// which is why a failure here shows up as the agent going quiet mid-call.
+function respond(
+    toolCallId: string | null,
+    payload: any,
+    plainStatus: number
+): Response {
+    const body = toolCallId
+        ? { results: [{ toolCallId, result: JSON.stringify(payload) }] }
+        : payload;
+
+    return new Response(JSON.stringify(body), {
+        status: toolCallId ? 200 : plainStatus,
+        headers: { "Content-Type": "application/json" },
+    });
+}
+
 // validate and fix workout plan to ensure it has proper numeric types
 function validateWorkoutPlan(plan: any) {
     const validatedPlan = {
@@ -131,11 +197,17 @@ http.route({
     path: "/vapi/generate-program",
     method: "POST",
     handler: httpAction(async (ctx, request) => {
+        let toolCallId: string | null = null;
+
         try {
-            const payload = await request.json();
+            const body = await request.json();
+            console.log("Raw Vapi body:", JSON.stringify(body));
+
+            const extracted = extractToolCall(body);
+            toolCallId = extracted.toolCallId;
+            const args = extracted.args;
 
             const {
-                user_id,
                 age,
                 height,
                 weight,
@@ -144,9 +216,28 @@ http.route({
                 fitness_goal,
                 fitness_level,
                 dietary_restrictions,
-            } = payload;
+            } = args;
 
-            console.log("Payload is here:", payload);
+            const user_id = extractUserId(body, args);
+
+            console.log("Parsed tool args:", { toolCallId, user_id, ...args });
+
+            // Fail fast and loudly. Without this the two Gemini calls below run
+            // against `undefined` inputs and the request dies at the mutation
+            // validator instead, which hides the real cause.
+            if (!user_id) {
+                console.error("No usable user_id in payload", JSON.stringify(body));
+                return respond(
+                    toolCallId,
+                    {
+                        success: false,
+                        error:
+                            "Missing user_id. The assistant must pass the user_id it was given; " +
+                            "check that variableValues reached the assistant.",
+                    },
+                    400
+                );
+            }
 
             const model = genAI.getGenerativeModel({
                 model: "gemini-3.5-flash-lite",
@@ -261,31 +352,27 @@ http.route({
                 name: `${fitness_goal} Plan - ${new Date().toLocaleDateString()}`,
             });
 
-            return new Response(
-                JSON.stringify({
+            return respond(
+                toolCallId,
+                {
                     success: true,
                     data: {
                         planId,
                         workoutPlan,
                         dietPlan,
                     },
-                }),
-                {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                }
+                },
+                200
             );
         } catch (error) {
             console.error("Error generating fitness plan:", error);
-            return new Response(
-                JSON.stringify({
+            return respond(
+                toolCallId,
+                {
                     success: false,
                     error: error instanceof Error ? error.message : String(error),
-                }),
-                {
-                    status: 500,
-                    headers: { "Content-Type": "application/json" },
-                }
+                },
+                500
             );
         }
     }),

@@ -1,6 +1,12 @@
 import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
+// `plans.userId` holds the Clerk user id (`identity.subject`, e.g. "user_2ab...").
+// It has to be the Clerk id rather than `identity.tokenIdentifier`, because the
+// Vapi voice flow writes plans through an unauthenticated HTTP action whose only
+// handle on the user is the Clerk id passed in as a template variable. Every
+// reader and writer below must therefore agree on this one key.
+
 export const createPlan = mutation({
     args: {
         name: v.string(),
@@ -34,7 +40,7 @@ export const createPlan = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("User must be authenticated to create a plan");
 
-        const userId = identity.tokenIdentifier;
+        const userId = identity.subject;
 
         const activePlans = await ctx.db
             .query("plans")
@@ -116,7 +122,7 @@ export const getUserPlans = query({
 
         const plans = await ctx.db
             .query("plans")
-            .withIndex("by_user_id", (q) => q.eq("userId", identity.tokenIdentifier))
+            .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
             .order("desc")
             .collect();
 

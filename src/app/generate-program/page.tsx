@@ -140,26 +140,27 @@ const GenerateProgramPage = () => {
 
                 console.log("Starting call with:", { assistantId, squadId, apiKey: process.env.NEXT_PUBLIC_VAPI_API_KEY?.slice(0, 10) });
 
+                if (!user?.id) throw new Error("No signed-in Clerk user; cannot start call");
+
+                const variableValues = { full_name: fullName, user_id: user.id };
+
                 if (assistantId) {
-                    await vapi.start(assistantId, {
-                        variableValues: {
-                            full_name: fullName,
-                            user_id: user?.id,
-                        },
-                    });
+                    // assistantOverrides is documented as applying to `assistant` /
+                    // `assistantId` only, so this is the path where {{user_id}} and
+                    // {{full_name}} actually get substituted.
+                    await vapi.start(assistantId, { variableValues });
                 } else if (squadId) {
-                    // variableValues must go in assistantOverrides (2nd arg), not
-                    // workflowOverrides (5th) — a squad call ignores the latter.
-                    await vapi.start(
-                        undefined,
-                        {
-                            variableValues: {
-                                full_name: fullName,
-                                user_id: user?.id,
-                            },
-                        },
-                        squadId
+                    // Template variables for a squad live on CreateWebCallDTO's
+                    // `squadOverrides` (or squad.membersOverrides), and @vapi-ai/web
+                    // 2.7.0's start() never sends either — it forwards only
+                    // assistantOverrides, which a squadId call ignores. So {{user_id}}
+                    // reaches nothing here. Set NEXT_PUBLIC_VAPI_ASSISTANT_ID instead.
+                    console.warn(
+                        "Starting a SQUAD call: variableValues cannot be delivered on this " +
+                        "path, so {{user_id}} will not be substituted and the " +
+                        "generate-program tool will fail. Set NEXT_PUBLIC_VAPI_ASSISTANT_ID."
                     );
+                    await vapi.start(undefined, { variableValues }, squadId);
                 } else {
                     throw new Error("No NEXT_PUBLIC_VAPI_ASSISTANT_ID or NEXT_PUBLIC_VAPI_SQUAD_ID found in environment");
                 }
