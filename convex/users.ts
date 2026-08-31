@@ -1,4 +1,4 @@
-import { mutation} from "./_generated/server";
+import { mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 // Called by the client whenever an authenticated user loads the app. Unlike the
@@ -46,6 +46,24 @@ export const syncUser = mutation({
         if (existingUser) return;
 
         return await ctx.db.insert("users", args);
+    },
+});
+
+// Internal-only: reachable from the Clerk `user.deleted` webhook, never from a
+// client. Note this intentionally leaves the user's `plans` in place — they are
+// keyed by Clerk id, so if the same person signs up again they will not return,
+// but the rows are kept rather than silently destroying data from a webhook.
+export const deleteUser = internalMutation({
+    args: { clerkId: v.string() },
+    handler: async (ctx, args) => {
+        const existingUser = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+        .first();
+
+        if (!existingUser) return;
+
+        await ctx.db.delete(existingUser._id);
     },
 });
 

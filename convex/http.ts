@@ -69,6 +69,23 @@ http.route({
             }
         }
 
+        // Without this, deleting a Clerk account leaves its `users` row behind
+        // forever. Those orphans are indistinguishable from live accounts when
+        // reading the table, which makes "which Clerk id is this person?" an
+        // unanswerable question from Convex alone.
+        if (eventType === "user.deleted") {
+            const { id } = evt.data;
+
+            if (id) {
+                try {
+                    await ctx.runMutation(internal.users.deleteUser, { clerkId: id });
+                } catch (error) {
+                    console.log("Error deleting user:", error);
+                    return new Response("Error deleting user", { status: 500 });
+                }
+            }
+        }
+
         if (eventType === "user.updated") {
             const { id, email_addresses, first_name, last_name, image_url } = evt.data;
 
@@ -126,23 +143,34 @@ function extractToolCall(body: any): {
     return { toolCallId: first.id ?? first.toolCallId ?? null, args };
 }
 
+// A Clerk user id always looks like "user_<base58ish>". Anything else reaching
+// this endpoint as a user_id is either an un-substituted template ("{{user_id}}")
+// or — far more commonly — a value the LLM invented because the template
+// variable never made it into its prompt (e.g. it slugified the caller's spoken
+// name into "arindam_sarkar"). Writing such a value produces a plan that no
+// signed-in user can ever read back, so reject it outright.
+function isClerkUserId(value: unknown): value is string {
+    return typeof value === "string" && /^user_[A-Za-z0-9]+$/.test(value);
+}
+
 // The template variable `{{user_id}}` is not substituted on every Vapi call path
 // (notably squad calls, where `vapi.start` cannot deliver variableValues), so
 // fall back to the overrides carried on the call object itself.
+//
+// ORDER MATTERS. The call-level overrides are set by our own client from the
+// authenticated Clerk session, so they are trustworthy. `args.user_id` is
+// whatever the model chose to put in the tool call — trusted last, and only when
+// it actually looks like a Clerk id.
 function extractUserId(body: any, args: Record<string, any>): string | undefined {
     const call = body?.message?.call;
     const candidates = [
-        args.user_id,
         call?.assistantOverrides?.variableValues?.user_id,
         call?.squadOverrides?.variableValues?.user_id,
         call?.metadata?.user_id,
+        args.user_id,
     ];
 
-    // Drop empty values and un-substituted templates like "{{user_id}}".
-    return candidates.find(
-        (value) =>
-            typeof value === "string" && value.length > 0 && !value.includes("{{")
-    );
+    return candidates.find(isClerkUserId);
 }
 
 // A tool call must always get HTTP 200 with a `results` array — Vapi treats any
@@ -226,14 +254,21 @@ http.route({
             // against `undefined` inputs and the request dies at the mutation
             // validator instead, which hides the real cause.
             if (!user_id) {
-                console.error("No usable user_id in payload", JSON.stringify(body));
+                console.error(
+                    "No usable Clerk user_id in payload. args.user_id was:",
+                    JSON.stringify(args.user_id),
+                    "full body:",
+                    JSON.stringify(body)
+                );
                 return respond(
                     toolCallId,
                     {
                         success: false,
                         error:
-                            "Missing user_id. The assistant must pass the user_id it was given; " +
-                            "check that variableValues reached the assistant.",
+                            "Missing a valid Clerk user_id (expected the form user_xxx). " +
+                            "The assistant must forward the {{user_id}} template variable " +
+                            "verbatim and must never invent one from the caller's name. " +
+                            "Check that variableValues reached the assistant.",
                     },
                     400
                 );

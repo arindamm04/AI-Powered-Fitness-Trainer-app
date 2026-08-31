@@ -138,16 +138,16 @@ const GenerateProgramPage = () => {
                 const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
                 const squadId = process.env.NEXT_PUBLIC_VAPI_SQUAD_ID;
 
-                console.log("Starting call with:", { assistantId, squadId, apiKey: process.env.NEXT_PUBLIC_VAPI_API_KEY?.slice(0, 10) });
+                console.log("Starting call with:", { assistantId, squadId });
 
                 if (!user?.id) throw new Error("No signed-in Clerk user; cannot start call");
 
+                // Delivered to Vapi as `assistantOverrides.variableValues`, which is
+                // what makes `{{user_id}}` resolvable inside the assistant's prompt
+                // and inside its API Request tool's body template.
                 const variableValues = { full_name: fullName, user_id: user.id };
 
                 if (assistantId) {
-                    // assistantOverrides is documented as applying to `assistant` /
-                    // `assistantId` only, so this is the path where {{user_id}} and
-                    // {{full_name}} actually get substituted.
                     await vapi.start(assistantId, { variableValues });
                 } else if (squadId) {
                     // Template variables for a squad live on CreateWebCallDTO's
@@ -162,7 +162,10 @@ const GenerateProgramPage = () => {
                     );
                     await vapi.start(undefined, { variableValues }, squadId);
                 } else {
-                    throw new Error("No NEXT_PUBLIC_VAPI_ASSISTANT_ID or NEXT_PUBLIC_VAPI_SQUAD_ID found in environment");
+                    throw new Error(
+                        "No NEXT_PUBLIC_VAPI_ASSISTANT_ID or NEXT_PUBLIC_VAPI_SQUAD_ID " +
+                        "found in environment"
+                    );
                 }
             } catch (error) {
                 console.log("Failed to start call", error);

@@ -33,7 +33,17 @@ const ProfilePage = () => {
         <section className="relative z-10 pt-12 pb-32 flex-grow container mx-auto px-4">
             <ProfileHeader user={user} />
 
-            {allPlans && allPlans?.length > 0 ? (
+            {/* `useQuery` returns undefined until the first result arrives (and again
+                while Convex auth is still handshaking). Rendering NoFitnessPlan then
+                makes a loading page look identical to an empty one. */}
+            {allPlans === undefined ? (
+                <div className="relative backdrop-blur-sm border border-border p-6 text-center">
+                    <CornerElements />
+                    <p className="font-mono text-sm text-muted-foreground animate-pulse">
+                        LOADING YOUR PLANS...
+                    </p>
+                </div>
+            ) : allPlans.length > 0 ? (
                 <div className="space-y-8">
                     {/* PLAN SELECTOR */}
                     <div className="relative backdrop-blur-sm border border-border p-6">
@@ -53,7 +63,10 @@ const ProfilePage = () => {
                                 <Button
                                     key={plan._id}
                                     onClick={() => setSelectedPlanId(plan._id)}
-                                    className={`text-foreground border hover:text-white ${selectedPlanId === plan._id
+                                    // Compare against `currentPlan`, not `selectedPlanId` —
+                                    // otherwise the active plan shown on first load is not
+                                    // marked as the one being displayed.
+                                    className={`text-foreground border hover:text-white font-mono ${currentPlan?._id === plan._id
                                         ? "bg-primary/20 text-primary border-primary"
                                         : "bg-transparent border-border hover:border-primary/50"
                                         }`}
@@ -70,7 +83,6 @@ const ProfilePage = () => {
                     </div>
 
                     {/* PLAN DETAILS */}
-
                     {currentPlan && (
                         <div className="relative backdrop-blur-sm border border-border rounded-lg p-6">
                             <CornerElements />
@@ -82,11 +94,13 @@ const ProfilePage = () => {
                                 </h3>
                             </div>
 
-                            <Tabs>
-                                <TabsList className="mb-6 w-full grid grid-cols-2 bg-cyber-terminal-bg border">
+                            <Tabs defaultValue="workout">
+                                {/* `bg-cyber-terminal-bg` was a no-op — no such token exists
+                                    in globals.css, so Tailwind generated nothing for it. */}
+                                <TabsList className="mb-6 w-full grid grid-cols-2 h-auto bg-background/40 border">
                                     <TabsTrigger
                                         value="workout"
-                                        className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary"
+                                        className="py-2 data-active:bg-primary/20 data-active:text-primary data-active:border-primary/50"
                                     >
                                         <DumbbellIcon className="mr-2 size-4" />
                                         Workout Plan
@@ -94,9 +108,9 @@ const ProfilePage = () => {
 
                                     <TabsTrigger
                                         value="diet"
-                                        className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary"
+                                        className="py-2 data-active:bg-primary/20 data-active:text-primary data-active:border-primary/50"
                                     >
-                                        <AppleIcon className="mr-2 h-4 w-4" />
+                                        <AppleIcon className="mr-2 size-4" />
                                         Diet Plan
                                     </TabsTrigger>
                                 </TabsList>
@@ -110,15 +124,18 @@ const ProfilePage = () => {
                                             </span>
                                         </div>
 
-                                        <Accordion{...({ type: "multiple", className: "space-y-4" } as any)}>
+                                        {/* `multiple` is the Base UI prop — Radix calls it
+                                            type="multiple", which is what this used to pass
+                                            through an `as any` cast, so it silently did nothing. */}
+                                        <Accordion multiple className="space-y-4">
                                             {currentPlan.workoutPlan.exercises.map((exerciseDay, index) => (
                                                 <AccordionItem
                                                     key={index}
-                                                    value={exerciseDay.day}
+                                                    value={`${index}-${exerciseDay.day}`}
                                                     className="border rounded-lg overflow-hidden"
                                                 >
                                                     <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-primary/10 font-mono">
-                                                        <div className="flex justify-between w-full items-center">
+                                                        <div className="flex justify-between w-full items-center pr-2">
                                                             <span className="text-primary">{exerciseDay.day}</span>
                                                             <div className="text-xs text-muted-foreground">
                                                                 {exerciseDay.routines.length} EXERCISES
@@ -133,17 +150,30 @@ const ProfilePage = () => {
                                                                     key={routineIndex}
                                                                     className="border border-border rounded p-3 bg-background/50"
                                                                 >
-                                                                    <div className="flex justify-between items-start mb-2">
+                                                                    <div className="flex justify-between items-start mb-2 gap-3">
                                                                         <h4 className="font-semibold text-foreground">
                                                                             {routine.name}
                                                                         </h4>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <div className="px-2 py-1 rounded bg-primary/20 text-primary text-xs font-mono">
-                                                                                {routine.sets} SETS
-                                                                            </div>
-                                                                            <div className="px-2 py-1 rounded bg-secondary/20 text-secondary text-xs font-mono">
-                                                                                {routine.reps} REPS
-                                                                            </div>
+
+                                                                        {/* sets/reps/duration are all optional in the
+                                                                            schema — render only what exists, so a cardio
+                                                                            entry never reads "undefined SETS". */}
+                                                                        <div className="flex shrink-0 items-center gap-2">
+                                                                            {routine.sets != null && (
+                                                                                <div className="px-2 py-1 rounded bg-primary/20 text-primary text-xs font-mono">
+                                                                                    {routine.sets} SETS
+                                                                                </div>
+                                                                            )}
+                                                                            {routine.reps != null && (
+                                                                                <div className="px-2 py-1 rounded bg-secondary/20 text-secondary text-xs font-mono">
+                                                                                    {routine.reps} REPS
+                                                                                </div>
+                                                                            )}
+                                                                            {routine.duration && (
+                                                                                <div className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs font-mono">
+                                                                                    {routine.duration}
+                                                                                </div>
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                     {routine.description && (
@@ -202,7 +232,6 @@ const ProfilePage = () => {
                                         </div>
                                     </div>
                                 </TabsContent>
-
                             </Tabs>
                         </div>
                     )}

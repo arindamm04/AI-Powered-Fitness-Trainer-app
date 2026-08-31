@@ -14,8 +14,22 @@ function Tabs({
     <TabsPrimitive.Root
       data-slot="tabs"
       data-orientation={orientation}
+      // The classes below (and the `group-data-horizontal/tabs:` /
+      // `group-data-vertical/tabs:` ones in List and Trigger) compile to
+      // attribute-presence selectors — `[data-horizontal]`, not
+      // `[data-orientation="horizontal"]`. Without these boolean attributes none
+      // of them ever match, so the root keeps `flex` with no `flex-col` and the
+      // tab list ends up sitting *beside* the panel instead of above it.
+      data-horizontal={orientation === "horizontal" ? "" : undefined}
+      data-vertical={orientation === "vertical" ? "" : undefined}
+      // Deliberately a plain conditional class rather than the
+      // `data-horizontal:flex-col` variant this shipped with. The variant is
+      // one Tailwind has to generate from scanning this file; a bare `flex-col`
+      // is already in every build. If it is ever missing, the root falls back to
+      // `flex` in row direction and the tab list sits *beside* the panel.
       className={cn(
-        "group/tabs flex gap-2 data-horizontal:flex-col",
+        "group/tabs flex w-full gap-2",
+        orientation === "horizontal" ? "flex-col" : "flex-row",
         className
       )}
       {...props}
@@ -73,7 +87,7 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
   return (
     <TabsPrimitive.Panel
       data-slot="tabs-content"
-      className={cn("flex-1 text-sm outline-none", className)}
+      className={cn("w-full flex-1 text-sm outline-none", className)}
       {...props}
     />
   )
