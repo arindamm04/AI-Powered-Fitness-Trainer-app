@@ -12,7 +12,7 @@
 [![Convex](https://img.shields.io/badge/Convex-Serverless-000?style=flat-square)](https://convex.dev)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-[🎬 **WATCH DEMO VIDEO**](https://youtu.be/MNqjn9QVTFc?si=LnS4DNLvhiifvdKO) • [Live Site](#) • [GitHub](#)
+[🎬 **WATCH DEMO VIDEO**](https://youtu.be/MNqjn9QVTFc?si=LnS4DNLvhiifvdKO)
 
 </div>
 
